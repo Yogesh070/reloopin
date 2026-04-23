@@ -12,13 +12,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Reloopin_Loyalty_Orders
+class ReLoopin_Loyalty_Orders
 {
 
-    private Reloopin_Loyalty_API $api;
+    private ReLoopin_Loyalty_API $api;
     private WC_Logger_Interface $logger;
 
-    public function __construct(Reloopin_Loyalty_API $api)
+    public function __construct(ReLoopin_Loyalty_API $api)
     {
         $this->api = $api;
         $this->logger = wc_get_logger();
