@@ -23,12 +23,13 @@ class Reloopin_Loyalty_Orders
         $this->api = $api;
         $this->logger = wc_get_logger();
 
-        add_action('woocommerce_order_status_completed', [$this, 'post_transaction'], 10, 1);
+        add_action('woocommerce_payment_complete', [$this, 'post_transaction'], 10, 1);
+        add_action('woocommerce_order_status_processing', [$this, 'post_transaction'], 10, 1);
     }
 
     public function post_transaction(int $order_id): void
     {
-        reloopin_loyalty_debug("orders: woocommerce_order_status_completed fired", ['order_id' => $order_id]);
+        reloopin_loyalty_debug("orders: post_transaction triggered", ['order_id' => $order_id]);
 
         $order = wc_get_order($order_id);
 
