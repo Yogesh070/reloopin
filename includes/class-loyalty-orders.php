@@ -43,10 +43,16 @@ class ReLoopin_Loyalty_Orders
             return;
         }
 
-        $customer_email = $order->get_billing_email();
+        $customer_id = (int) $order->get_customer_id();
+        if ($customer_id > 0) {
+            $user = get_user_by('id', $customer_id);
+            $customer_email = $user ? $user->user_email : $order->get_billing_email();
+        } else {
+            $customer_email = $order->get_billing_email();
+        }
 
         if (empty($customer_email)) {
-            reloopin_loyalty_debug("orders: order #{$order_id} has no billing email — skipping");
+            reloopin_loyalty_debug("orders: order #{$order_id} has no email — skipping");
             return;
         }
 
