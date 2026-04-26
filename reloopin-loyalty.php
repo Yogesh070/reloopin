@@ -72,10 +72,12 @@ function reloopin_loyalty_init()
 
     require_once RELOOPIN_LOYALTY_PLUGIN_DIR . 'includes/class-loyalty-api.php';
     require_once RELOOPIN_LOYALTY_PLUGIN_DIR . 'includes/class-loyalty-orders.php';
+    require_once RELOOPIN_LOYALTY_PLUGIN_DIR . 'includes/class-loyalty-launcher.php';
 
     $api = new ReLoopin_Loyalty_API();
 
     new ReLoopin_Loyalty_Orders($api);
+    new ReLoopin_Loyalty_Launcher($api);
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +142,158 @@ function reloopin_loyalty_get_settings()
         [
             'type' => 'sectionend',
             'id' => 'reloopin_loyalty_section_end',
+        ],
+
+        // ── LAUNCHER WIDGET: Design ─────────────────────────────────────────
+        [
+            'title' => __('Launcher Widget — Design', 'reloopin-loyalty'),
+            'type'  => 'title',
+            'id'    => 'reloopin_launcher_design_title',
+            'desc'  => __('Customise the look of the floating loyalty launcher.', 'reloopin-loyalty'),
+        ],
+        [
+            'title'   => __('Logo URL', 'reloopin-loyalty'),
+            'desc'    => __('Full URL of your logo image. Leave blank to show the widget icon instead.', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_logo_url',
+            'type'    => 'text',
+            'default' => '',
+        ],
+        [
+            'title'   => __('Show logo', 'reloopin-loyalty'),
+            'desc'    => __('Display your logo in the launcher button and panel header.', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_logo_show',
+            'type'    => 'checkbox',
+            'default' => 'yes',
+        ],
+        [
+            'title'   => __('Primary colour', 'reloopin-loyalty'),
+            'desc'    => __('Hex colour for the card background and buttons, e.g. #1e3a8a', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_color_primary',
+            'type'    => 'text',
+            'default' => '#1e3a8a',
+            'css'     => 'width:120px;',
+        ],
+        [
+            'title'   => __('Text colour on primary', 'reloopin-loyalty'),
+            'desc'    => __('Hex colour for text shown on the primary colour, e.g. #ffffff', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_color_text',
+            'type'    => 'text',
+            'default' => '#ffffff',
+            'css'     => 'width:120px;',
+        ],
+        [
+            'title'   => __('Panel background colour', 'reloopin-loyalty'),
+            'desc'    => __('Hex colour for the panel body background, e.g. #f3f4f6', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_color_bg',
+            'type'    => 'text',
+            'default' => '#f3f4f6',
+            'css'     => 'width:120px;',
+        ],
+        [
+            'title'   => __('Show "Powered by reLoopin"', 'reloopin-loyalty'),
+            'desc'    => __('Display branding at the bottom of the launcher panel.', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_branding',
+            'type'    => 'checkbox',
+            'default' => 'yes',
+        ],
+        [
+            'type' => 'sectionend',
+            'id'   => 'reloopin_launcher_design_end',
+        ],
+
+        // ── LAUNCHER WIDGET: Content ────────────────────────────────────────
+        [
+            'title' => __('Launcher Widget — Content', 'reloopin-loyalty'),
+            'type'  => 'title',
+            'id'    => 'reloopin_launcher_content_title',
+            'desc'  => __('Text displayed inside the launcher panel for guests and logged-in users.', 'reloopin-loyalty'),
+        ],
+        [
+            'title'   => __('Guest heading', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_guest_heading',
+            'type'    => 'text',
+            'default' => __('Join Our Loyalty Program', 'reloopin-loyalty'),
+        ],
+        [
+            'title'   => __('Guest sub-text', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_guest_subtext',
+            'type'    => 'textarea',
+            'default' => __('Sign up to start earning points on every purchase.', 'reloopin-loyalty'),
+            'css'     => 'height:60px;',
+        ],
+        [
+            'title'   => __('Earn description', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_earn_desc',
+            'type'    => 'textarea',
+            'default' => __('Earn points by shopping, signing up, and more.', 'reloopin-loyalty'),
+            'css'     => 'height:60px;',
+        ],
+        [
+            'title'   => __('Redeem description', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_redeem_desc',
+            'type'    => 'textarea',
+            'default' => __('Redeem your points for discounts on future orders.', 'reloopin-loyalty'),
+            'css'     => 'height:60px;',
+        ],
+        [
+            'title'   => __('Show referral section', 'reloopin-loyalty'),
+            'desc'    => __('Display the referral URL card for logged-in users.', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_referral_show',
+            'type'    => 'checkbox',
+            'default' => 'yes',
+        ],
+        [
+            'title'   => __('Referral card title', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_referral_title',
+            'type'    => 'text',
+            'default' => __('Refer and earn', 'reloopin-loyalty'),
+        ],
+        [
+            'title'   => __('Referral card text', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_referral_text',
+            'type'    => 'textarea',
+            'default' => __('Refer your friends and earn rewards. Your friend can get a reward as well!', 'reloopin-loyalty'),
+            'css'     => 'height:60px;',
+        ],
+        [
+            'type' => 'sectionend',
+            'id'   => 'reloopin_launcher_content_end',
+        ],
+
+        // ── LAUNCHER WIDGET: Launcher tab ───────────────────────────────────
+        [
+            'title' => __('Launcher Widget — Launcher', 'reloopin-loyalty'),
+            'type'  => 'title',
+            'id'    => 'reloopin_launcher_tab_title',
+            'desc'  => __('Control where and how the floating launcher button appears.', 'reloopin-loyalty'),
+        ],
+        [
+            'title'   => __('Enable launcher widget', 'reloopin-loyalty'),
+            'desc'    => __('Show the floating loyalty launcher on the frontend.', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_enabled',
+            'type'    => 'checkbox',
+            'default' => 'yes',
+        ],
+        [
+            'title'   => __('Button position', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_position',
+            'type'    => 'select',
+            'default' => 'bottom-right',
+            'options' => [
+                'bottom-right' => __('Bottom right', 'reloopin-loyalty'),
+                'bottom-left'  => __('Bottom left', 'reloopin-loyalty'),
+            ],
+        ],
+        [
+            'title'   => __('Button text', 'reloopin-loyalty'),
+            'desc'    => __('Label shown on the floating trigger button.', 'reloopin-loyalty'),
+            'id'      => 'reloopin_launcher_button_text',
+            'type'    => 'text',
+            'default' => __('Rewards', 'reloopin-loyalty'),
+        ],
+        [
+            'type' => 'sectionend',
+            'id'   => 'reloopin_launcher_tab_end',
         ],
     ];
 }
