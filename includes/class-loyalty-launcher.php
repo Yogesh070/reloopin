@@ -28,6 +28,23 @@ class ReLoopin_Loyalty_Launcher
         add_action('wp_ajax_reloopin_launcher_data', [$this, 'ajax_launcher_data']);
         add_action('wp_ajax_nopriv_reloopin_launcher_data', [$this, 'ajax_launcher_data']);
         add_action('wp_ajax_reloopin_launcher_history', [$this, 'ajax_launcher_history']);
+        add_action('woocommerce_payment_complete', [$this, 'invalidate_user_cache']);
+        add_action('woocommerce_order_status_processing', [$this, 'invalidate_user_cache']);
+    }
+
+    // -----------------------------------------------------------------------
+
+    public function invalidate_user_cache(int $order_id): void
+    {
+        $order = wc_get_order($order_id);
+        if (!$order) {
+            return;
+        }
+        $user_id = (int) $order->get_customer_id();
+        if ($user_id > 0) {
+            delete_transient('rl_bal_' . $user_id);
+            delete_transient('rl_hist_' . $user_id . '_1');
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -75,22 +92,32 @@ class ReLoopin_Loyalty_Launcher
             wp_send_json_success(['logged_in' => false]);
         }
 
+        $user_id   = get_current_user_id();
+        $cache_key = 'rl_bal_' . $user_id;
+        $cached    = get_transient($cache_key);
+
+        if ($cached !== false) {
+            wp_send_json_success($cached);
+        }
+
         $user         = wp_get_current_user();
-        $customer_ref = $user->user_email;
-        $balance_data = $this->api->get_balance($customer_ref);
+        $balance_data = $this->api->get_balance($user->user_email);
 
         if (is_wp_error($balance_data)) {
             wp_send_json_error(['message' => __('Could not fetch points balance.', 'reloopin-loyalty')]);
         }
 
-        wp_send_json_success([
+        $payload = [
             'logged_in'        => true,
             'name'             => $user->display_name ?: $user->first_name ?: $user->user_login,
             'available_points' => (int) ($balance_data['available_points'] ?? 0),
             'lifetime_points'  => (int) ($balance_data['lifetime_points'] ?? 0),
             'tier'             => $balance_data['tier'] ?? '',
-            'referral_url'     => add_query_arg('ref', get_current_user_id(), home_url('/')),
-        ]);
+            'referral_url'     => add_query_arg('ref', $user_id, home_url('/')),
+        ];
+
+        set_transient($cache_key, $payload, 5 * MINUTE_IN_SECONDS);
+        wp_send_json_success($payload);
     }
 
     // -----------------------------------------------------------------------
@@ -103,8 +130,16 @@ class ReLoopin_Loyalty_Launcher
             wp_send_json_error(['message' => 'not_logged_in']);
         }
 
+        $user_id   = get_current_user_id();
+        $page      = max(1, (int) ($_POST['page'] ?? 1));
+        $cache_key = 'rl_hist_' . $user_id . '_' . $page;
+        $cached    = get_transient($cache_key);
+
+        if ($cached !== false) {
+            wp_send_json_success($cached);
+        }
+
         $user         = wp_get_current_user();
-        $page         = max(1, (int) ($_POST['page'] ?? 1));
         $history_data = $this->api->get_history($user->user_email, $page, 10);
 
         if (is_wp_error($history_data)) {
@@ -122,12 +157,15 @@ class ReLoopin_Loyalty_Launcher
             ];
         }, $history_data['results'] ?? []);
 
-        wp_send_json_success([
-            'results'    => $results,
-            'total'      => (int) ($history_data['total'] ?? 0),
-            'page_size'  => (int) ($history_data['page_size'] ?? 10),
-            'page'       => $page,
-        ]);
+        $payload = [
+            'results'   => $results,
+            'total'     => (int) ($history_data['total'] ?? 0),
+            'page_size' => (int) ($history_data['page_size'] ?? 10),
+            'page'      => $page,
+        ];
+
+        set_transient($cache_key, $payload, 5 * MINUTE_IN_SECONDS);
+        wp_send_json_success($payload);
     }
 
     // -----------------------------------------------------------------------
