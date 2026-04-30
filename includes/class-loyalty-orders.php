@@ -3,9 +3,9 @@
  * Loyalty Orders
  *
  * Posts a transaction to the loyalty backend when an order is completed.
- *
- * Event type priority (highest first):
- *   first_order → featured_product_purchase → campaign_coupons → free_shipping → product_purchase
+ * All qualifying event types are posted as separate transactions:
+ *   first_order, featured_product_purchase, campaign_coupons, free_shipping
+ * product_purchase is the fallback when none of the above apply.
  */
 
 if (!defined('ABSPATH')) {
@@ -38,8 +38,16 @@ class ReLoopin_Loyalty_Orders
             return;
         }
 
-        if ($order->get_meta('_loyalty_transaction_posted')) {
-            reloopin_loyalty_debug("orders: order #{$order_id} already posted — skipping (idempotency)");
+        $posted_events = json_decode($order->get_meta('_loyalty_events_posted') ?: '[]', true);
+        if (!is_array($posted_events)) {
+            $posted_events = [];
+        }
+
+        $event_types = $this->resolve_event_types($order);
+        $pending     = array_values(array_diff($event_types, $posted_events));
+
+        if (empty($pending)) {
+            reloopin_loyalty_debug("orders: order #{$order_id} all events already posted — skipping");
             return;
         }
 
@@ -56,101 +64,136 @@ class ReLoopin_Loyalty_Orders
             return;
         }
 
-        $event_type = $this->resolve_event_type($order);
-        reloopin_loyalty_debug("orders: resolved event_type for order #{$order_id}", $event_type);
+        reloopin_loyalty_debug("orders: pending events for order #{$order_id}", $pending);
 
-        // Build line-item metadata.
+        // Build line-item metadata once — shared across all event transactions.
         $items = [];
         foreach ($order->get_items() as $item) {
             /** @var WC_Order_Item_Product $item */
             $product = $item->get_product();
             $items[] = [
-                'sku' => $product ? ($product->get_sku() ?: (string) $product->get_id()) : '',
-                'name' => $item->get_name(),
-                'qty' => $item->get_quantity(),
-                'price' => (float) $order->get_item_subtotal($item, false, true),
+                'sku'      => $product ? ($product->get_sku() ?: (string) $product->get_id()) : '',
+                'name'     => $item->get_name(),
+                'qty'      => $item->get_quantity(),
+                'price'    => (float) $order->get_item_subtotal($item, false, true),
                 'featured' => $product ? $product->is_featured() : false,
             ];
         }
 
-        $result = $this->api->create_transaction([
-            'customer_email' => $customer_email,
-            'customer_phone' => $order->get_billing_phone(),
-            'order_id' => (string) $order->get_order_number(),
-            'event_type' => $event_type,
-            'total_amount' => number_format((float) $order->get_total(), 2, '.', ''),
-            'transaction_status' => 'completed',
-            'transaction_metadata' => [
-                'items' => $items,
-                'platform' => 'woocommerce',
-            ],
-        ]);
+        $base_order_number = (string) $order->get_order_number();
+        $succeeded         = []; // event_type → transaction_id
+        $failed            = []; // event_type → error_message
 
-        if (is_wp_error($result)) {
-            reloopin_loyalty_debug("orders: transaction failed for order #{$order_id}", $result->get_error_message());
-            $this->logger->error(
-                sprintf('Loyalty: transaction post failed for order #%d — %s', $order_id, $result->get_error_message()),
-                ['source' => 'reloopin-loyalty']
-            );
-            return;
+        foreach ($pending as $event_type) {
+            $result = $this->api->create_transaction([
+                'customer_email'       => $customer_email,
+                'customer_phone'       => $order->get_billing_phone(),
+                'order_id'             => $base_order_number . '-' . $event_type,
+                'event_type'           => $event_type,
+                'total_amount'         => number_format((float) $order->get_total(), 2, '.', ''),
+                'transaction_status'   => 'completed',
+                'transaction_metadata' => [
+                    'items'    => $items,
+                    'platform' => 'woocommerce',
+                ],
+            ]);
+
+            if (is_wp_error($result)) {
+                $failed[$event_type] = $result->get_error_message();
+                reloopin_loyalty_debug("orders: transaction failed for order #{$order_id} event {$event_type}", $result->get_error_message());
+                $this->logger->error(
+                    sprintf('Loyalty: transaction failed for order #%d event %s — %s', $order_id, $event_type, $result->get_error_message()),
+                    ['source' => 'reloopin-loyalty']
+                );
+                continue;
+            }
+
+            $tx_id                   = $result['id'] ?? 'n/a';
+            $succeeded[$event_type]  = $tx_id;
+            $posted_events[]         = $event_type;
+
+            reloopin_loyalty_debug("orders: transaction posted for order #{$order_id}", [
+                'event_type'     => $event_type,
+                'transaction_id' => $tx_id,
+            ]);
+
+            // Save after each success so a mid-loop crash doesn't lose progress.
+            $order->update_meta_data('_loyalty_events_posted', json_encode($posted_events));
+            $order->save_meta_data();
         }
 
-        reloopin_loyalty_debug("orders: transaction posted for order #{$order_id}", [
-            'event_type' => $event_type,
-            'transaction_id' => $result['id'] ?? 'n/a',
-        ]);
+        // Store the full event → tx_id map.
+        if (!empty($succeeded)) {
+            $existing_ids = json_decode($order->get_meta('_loyalty_transaction_ids') ?: '{}', true);
+            if (!is_array($existing_ids)) {
+                $existing_ids = [];
+            }
+            $order->update_meta_data('_loyalty_transaction_ids', json_encode(array_merge($existing_ids, $succeeded)));
+            $order->save_meta_data();
+        }
 
-        $order->update_meta_data('_loyalty_transaction_posted', 1);
-        $order->update_meta_data('_loyalty_transaction_id', $result['id'] ?? '');
-        $order->update_meta_data('_loyalty_event_type', $event_type);
-        $order->add_order_note(
-            sprintf(
-                __('reloopin Loyalty: transaction posted (event: %s). Points engine will award points.', 'reloopin-loyalty'),
-                $event_type
-            )
-        );
+        // Consolidated order note.
+        $note_lines = [];
+        foreach ($succeeded as $et => $tx_id) {
+            $note_lines[] = sprintf('  - %s (tx: %s)', $et, $tx_id);
+        }
+        foreach ($failed as $et => $err) {
+            $note_lines[] = sprintf('  [FAILED: %s — %s]', $et, $err);
+        }
+        $order->add_order_note(sprintf(
+            __('reloopin Loyalty: %d transaction(s) posted.%s', 'reloopin-loyalty'),
+            count($succeeded),
+            "\n" . implode("\n", $note_lines)
+        ));
         $order->save_meta_data();
     }
 
     // -----------------------------------------------------------------------
 
-    private function resolve_event_type(WC_Order $order): string
+    private function resolve_event_types(WC_Order $order): array
     {
-        // 1. first_order
+        $events = [];
+
+        // first_order (guests never qualify — customer_id must be > 0)
         $customer_id = (int) $order->get_customer_id();
         if ($customer_id > 0 && wc_get_customer_order_count($customer_id) === 1) {
             reloopin_loyalty_debug("orders: event_type=first_order (customer #{$customer_id})");
-            return 'first_order';
+            $events[] = 'first_order';
         }
 
-        // 2. featured_product_purchase
+        // featured_product_purchase
         foreach ($order->get_items() as $item) {
             /** @var WC_Order_Item_Product $item */
             $product = $item->get_product();
             if ($product && $product->is_featured()) {
                 reloopin_loyalty_debug("orders: event_type=featured_product_purchase (product #{$product->get_id()})");
-                return 'featured_product_purchase';
+                $events[] = 'featured_product_purchase';
+                break;
             }
         }
 
-        // 3. campaign_coupons
-        $coupons = $order->get_coupon_codes();
-        if (count($coupons) > 0) {
-            reloopin_loyalty_debug('orders: event_type=campaign_coupons', $coupons);
-            return 'campaign_coupons';
+        // campaign_coupons
+        if (count($order->get_coupon_codes()) > 0) {
+            reloopin_loyalty_debug('orders: event_type=campaign_coupons', $order->get_coupon_codes());
+            $events[] = 'campaign_coupons';
         }
 
-        // 4. free_shipping
+        // free_shipping
         foreach ($order->get_shipping_methods() as $shipping_method) {
             /** @var WC_Order_Item_Shipping $shipping_method */
             if ($shipping_method->get_method_id() === 'free_shipping') {
                 reloopin_loyalty_debug('orders: event_type=free_shipping');
-                return 'free_shipping';
+                $events[] = 'free_shipping';
+                break;
             }
         }
 
-        // 5. fallback
-        reloopin_loyalty_debug('orders: event_type=product_purchase (fallback)');
-        return 'product_purchase';
+        // fallback — only when no qualifying events were found
+        if (empty($events)) {
+            reloopin_loyalty_debug('orders: event_type=product_purchase (fallback)');
+            $events[] = 'product_purchase';
+        }
+
+        return $events;
     }
 }
