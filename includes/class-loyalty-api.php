@@ -107,6 +107,42 @@ class ReLoopin_Loyalty_API
     }
 
     /**
+     * Get all points earning/spending rules for the merchant.
+     *
+     * @param string|null $event_type  Filter by event type (e.g. product_purchase, signup, birthday, referral).
+     */
+    public function get_rules(?string $event_type = null): array|WP_Error
+    {
+        if ($event_type !== null) {
+            $endpoint = '/api/v1/merchant/points/rules/event/' . urlencode($event_type);
+            $params = ['merchant_id' => $this->merchant_id];
+        } else {
+            $endpoint = '/api/v1/merchant/points/rules/';
+            $params = [
+                'merchant_id' => $this->merchant_id,
+                'active_only' => 'true',
+            ];
+        }
+
+        reloopin_loyalty_debug('get_rules → request', $params);
+
+        return $this->get($endpoint, $params);
+    }
+
+    /**
+     * Get tier configurations for the merchant.
+     */
+    public function get_tiers(): array|WP_Error
+    {
+        reloopin_loyalty_debug('get_tiers → request');
+
+        return $this->get('/api/v1/merchant/tiers/', [
+            'merchant_id' => $this->merchant_id,
+            'active_only' => 'true',
+        ]);
+    }
+
+    /**
      * Redeem (deduct) points from a customer's balance.
      *
      * @param int         $points  Must be > 0.
