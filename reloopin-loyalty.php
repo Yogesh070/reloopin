@@ -80,11 +80,13 @@ function reloopin_loyalty_init()
     require_once RELOOPIN_LOYALTY_PLUGIN_DIR . 'includes/class-loyalty-api.php';
     require_once RELOOPIN_LOYALTY_PLUGIN_DIR . 'includes/class-loyalty-orders.php';
     require_once RELOOPIN_LOYALTY_PLUGIN_DIR . 'includes/class-loyalty-launcher.php';
+    require_once RELOOPIN_LOYALTY_PLUGIN_DIR . 'includes/class-loyalty-customers.php';
 
     $api = new ReLoopin_Loyalty_API();
 
     new ReLoopin_Loyalty_Orders($api);
     new ReLoopin_Loyalty_Launcher($api);
+    new ReLoopin_Loyalty_Customers($api);
 }
 
 // ---------------------------------------------------------------------------

@@ -69,6 +69,29 @@ class ReLoopin_Loyalty_API
     }
 
     /**
+     * Create a customer in the reLoopin platform.
+     *
+     * Uses reloopin_api_key + merchant_id headers (platform auth).
+     */
+    public function create_platform_customer(string $email, string $first_name, string $last_name, string $phone = ''): array|WP_Error
+    {
+        $body = [
+            'merchant_id' => $this->merchant_id,
+            'email'       => $email,
+            'first_name'  => $first_name ?: 'N/A',
+            'last_name'   => $last_name ?: 'N/A',
+        ];
+
+        if (!empty($phone)) {
+            $body['phone_number'] = $phone;
+        }
+
+        reloopin_loyalty_debug('create_platform_customer → request body', $body);
+
+        return $this->post('/api/v1/merchant/platform/customer', $body, $this->platform_headers());
+    }
+
+    /**
      * Get a customer's current points balance and tier.
      *
      * Response: available_points, lifetime_points, redeemed_points, expired_points, tier, updated_at
@@ -218,6 +241,17 @@ class ReLoopin_Loyalty_API
             'merchant_code' => $this->merchant_code,
             'Content-Type' => 'application/json',
             'Accept' => 'application/json',
+        ];
+    }
+
+    /** Headers for platform endpoints: reloopin_api_key + merchant_id. */
+    private function platform_headers(): array
+    {
+        return [
+            'reloopin_api_key' => $this->api_key,
+            'merchant_id'      => $this->merchant_id,
+            'Content-Type'     => 'application/json',
+            'Accept'           => 'application/json',
         ];
     }
 
